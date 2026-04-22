@@ -559,6 +559,7 @@ const editorApp = createApp({
       markdownInput: '',
       renderedContent: '',
       currentStyle: 'wechat-default',
+      blockquoteStyle: 'decorated',  // 引用块样式：'default' | 'decorated'
       copySuccess: false,
       starredStyles: [],
       toast: {
@@ -621,7 +622,14 @@ const editorApp = createApp({
       articleHistory: [],           // 历史文章列表
       showHistoryPanel: false,      // 侧边栏显示状态
       currentArticleId: null,       // 当前编辑的文章ID（用于防止重复保存）
-      copyXSuccess: false            // 复制到 X 成功状态
+      copyXSuccess: false,           // 复制到 X 成功状态
+      // 文末模块
+      endModule: {
+        enabled: false,              // 是否启用
+        content: '',                 // Markdown 内容
+        styleKey: null               // null = 跟随正文样式
+      },
+      showEndModuleEditor: false     // 文末模块编辑区展开状态
     };
   },
 
@@ -723,6 +731,12 @@ const editorApp = createApp({
       // 保存样式偏好
       this.saveUserPreferences();
     },
+    blockquoteStyle() {
+      if (this.md) {
+        this.renderMarkdown();
+      }
+      localStorage.setItem('blockquoteStyle', this.blockquoteStyle);
+    },
     markdownInput(newVal, oldVal) {
       if (this.md) {
         this.renderMarkdown();
@@ -740,6 +754,15 @@ const editorApp = createApp({
       // 当从空内容粘贴大量内容时，也视为新文章
       else if ((!oldVal || oldVal.trim().length < 10) && newVal.trim().length > 100) {
         this.currentArticleId = null;
+      }
+    },
+    endModule: {
+      deep: true,
+      handler() {
+        if (this.md) {
+          this.renderMarkdown();
+        }
+        this.saveEndModule();
       }
     }
   },
@@ -766,6 +789,12 @@ const editorApp = createApp({
           this.currentStyle = savedStyle;
         }
 
+        // 加载引用块样式偏好
+        const savedBqStyle = localStorage.getItem('blockquoteStyle');
+        if (savedBqStyle === 'default' || savedBqStyle === 'decorated') {
+          this.blockquoteStyle = savedBqStyle;
+        }
+
         // 加载上次的内容
         const savedContent = localStorage.getItem('markdownInput');
         if (savedContent) {
@@ -774,6 +803,9 @@ const editorApp = createApp({
           // 如果没有保存的内容，加载默认示例
           this.loadDefaultExample();
         }
+
+        // 加载文末模块设置
+        this.loadEndModule();
       } catch (error) {
         console.error('加载用户偏好失败:', error);
         // 加载失败时使用默认示例
@@ -791,6 +823,30 @@ const editorApp = createApp({
         localStorage.setItem('markdownInput', this.markdownInput);
       } catch (error) {
         console.error('保存用户偏好失败:', error);
+      }
+    },
+
+    // 加载文末模块设置
+    loadEndModule() {
+      try {
+        const saved = localStorage.getItem('endModule');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          this.endModule.enabled = parsed.enabled || false;
+          this.endModule.content = parsed.content || '';
+          this.endModule.styleKey = parsed.styleKey || null;
+        }
+      } catch (error) {
+        console.error('加载文末模块失败:', error);
+      }
+    },
+
+    // 保存文末模块设置
+    saveEndModule() {
+      try {
+        localStorage.setItem('endModule', JSON.stringify(this.endModule));
+      } catch (error) {
+        console.error('保存文末模块失败:', error);
       }
     },
 
@@ -1108,6 +1164,10 @@ const markdown = \`![图片](img://\${imageId})\`;
         if (selector === 'pre' || selector === 'code' || selector === 'pre code') {
           return;
         }
+        // 装饰模式下跳过 blockquote 样式（由 decorateBlockquotes 处理）
+        if (selector === 'blockquote' && this.blockquoteStyle === 'decorated') {
+          return;
+        }
 
         // 跳过已经在网格容器中的图片
         const elements = doc.querySelectorAll(selector);
@@ -1151,7 +1211,50 @@ const markdown = \`![图片](img://\${imageId})\`;
       container.setAttribute('style', style.container);
       container.innerHTML = doc.body.innerHTML;
 
+      // 追加文末模块
+      if (this.endModule.enabled && this.endModule.content.trim()) {
+        const moduleHTML = this.applyStyleToHTML(
+          this.md.render(this.endModule.content),
+          this.endModule.styleKey || this.currentStyle
+        );
+        // 分隔线
+        const divider = '<div style="width: 100%; height: 0; border-top: 1px solid #E0E0E0; margin: 24px 0 0 0;"></div>';
+        container.innerHTML += divider + moduleHTML;
+      }
+
+      // 装饰 blockquote（生成公众号风格的引用块 section 结构）
+      if (this.blockquoteStyle === 'decorated') {
+        const finalDoc = new DOMParser().parseFromString(container.outerHTML, 'text/html');
+        this.decorateBlockquotes(finalDoc);
+        return finalDoc.body.innerHTML;
+      }
       return container.outerHTML;
+    },
+
+    // 将指定样式的内联 CSS 应用到 HTML 片段
+    applyStyleToHTML(html, styleKey) {
+      const style = STYLES[styleKey].styles;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+
+      Object.keys(style).forEach(selector => {
+        if (selector === 'pre' || selector === 'code' || selector === 'pre code') {
+          return;
+        }
+        if (selector === 'blockquote' && this.blockquoteStyle === 'decorated') {
+          return;
+        }
+        const elements = doc.querySelectorAll(selector);
+        elements.forEach(el => {
+          const currentStyle = el.getAttribute('style') || '';
+          el.setAttribute('style', currentStyle + '; ' + style[selector]);
+        });
+      });
+
+      const wrapper = doc.createElement('div');
+      wrapper.setAttribute('style', style.container);
+      wrapper.innerHTML = doc.body.innerHTML;
+      return wrapper.outerHTML;
     },
 
     groupConsecutiveImages(doc) {
@@ -1339,6 +1442,102 @@ const markdown = \`![图片](img://\${imageId})\`;
             element.parentNode.removeChild(element);
           }
         });
+      });
+    },
+
+    // 装饰 blockquote：生成公众号风格的引用块 section 结构（三角箭头 + L角圆弧 + 署名）
+    decorateBlockquotes(doc) {
+      const blockquotes = doc.querySelectorAll('blockquote');
+      blockquotes.forEach(bq => {
+        // 跳过已经在网格容器中的 blockquote
+        if (bq.closest('.image-grid')) return;
+        // 跳过已经装饰过的
+        if (bq.closest('.bq-decorated')) return;
+
+        const paragraphs = bq.querySelectorAll('p');
+        let authorName = '';
+        let contentHTML = bq.innerHTML;
+
+        // 检查最后一个 <p> 是否为署名行（匹配 "—— 名" 或 "— 名"）
+        if (paragraphs.length > 0) {
+          const lastP = paragraphs[paragraphs.length - 1];
+          const text = (lastP.textContent || '').trim();
+          const match = text.match(/^\s*(——|—)\s*(.+)$/);
+          if (match) {
+            authorName = match[2].trim();
+            // 从内容中移除署名段落
+            lastP.parentNode.removeChild(lastP);
+            contentHTML = bq.innerHTML;
+          }
+        }
+
+        // 移除 blockquote 原有样式
+        bq.removeAttribute('style');
+
+        const section = doc.createElement('section');
+        section.setAttribute('class', 'bq-decorated');
+        section.setAttribute('style', 'margin: 10px auto; max-width: 100%; box-sizing: border-box; overflow-wrap: break-word;');
+
+        // 左装饰：三角箭头
+        const leftTriangle = doc.createElement('section');
+        leftTriangle.setAttribute('style', 'margin-left: 2em; width: 0; height: 16px; border-width: 8px; border-style: solid; border-color: transparent transparent transparent rgb(70, 61, 59); overflow: hidden;');
+        leftTriangle.innerHTML = '<br>';
+        section.appendChild(leftTriangle);
+
+        // 左装饰：L角圆弧
+        const leftCorner = doc.createElement('section');
+        leftCorner.setAttribute('style', 'margin: -10px 0 0; width: 2em; height: 2em; border-top-left-radius: 10px; border-color: rgb(70, 61, 59) currentcolor currentcolor rgb(70, 61, 59); border-style: solid none none solid; border-width: 2px medium medium 2px; overflow: hidden;');
+        leftCorner.innerHTML = '<br>';
+        section.appendChild(leftCorner);
+
+        // 内容区
+        const contentSection = doc.createElement('section');
+        contentSection.setAttribute('style', 'margin: -1.3em 0; padding: 0 1em; font-size: 14px; letter-spacing: 1.5px; line-height: 24.5px; color: rgb(62, 62, 62);');
+
+        const contentInner = doc.createElement('section');
+        contentInner.setAttribute('style', 'margin-bottom: 16px;');
+        const span = doc.createElement('span');
+        span.setAttribute('style', 'font-size: 14px; color: rgb(51, 51, 51); letter-spacing: 1.5px;');
+        span.innerHTML = contentHTML;
+        contentInner.appendChild(span);
+        contentSection.appendChild(contentInner);
+
+        section.appendChild(contentSection);
+
+        // 结束装饰区（含署名时展示作者名，无署名时仅展示装饰边框）
+        {
+          const closingSection = doc.createElement('section');
+          closingSection.setAttribute('style', 'text-align: right; margin-bottom: 16px;');
+
+          const closingInner = doc.createElement('section');
+          closingInner.setAttribute('style', 'display: inline-block;');
+
+          // 右装饰：L角圆弧
+          const rightCorner = doc.createElement('section');
+          rightCorner.setAttribute('style', 'width: 2em; height: 2em; border-bottom-right-radius: 10px; border-color: currentcolor rgb(70, 61, 59) rgb(70, 61, 59) currentcolor; border-style: none solid solid none; border-width: medium 2px 2px medium; overflow: hidden;');
+          rightCorner.innerHTML = '<br>';
+          closingInner.appendChild(rightCorner);
+
+          // 右装饰：三角箭头
+          const rightTriangle = doc.createElement('section');
+          rightTriangle.setAttribute('style', 'margin: -9px 0 0 -0.8em; height: 16px; width: 0; border-width: 8px; border-style: solid; border-color: transparent rgb(70, 61, 59) transparent transparent; overflow: hidden;');
+          rightTriangle.innerHTML = '<br>';
+          closingInner.appendChild(rightTriangle);
+
+          // 作者名（仅当有署名时添加）
+          if (authorName) {
+            const authorSpan = doc.createElement('span');
+            authorSpan.setAttribute('style', 'font-size: 14px; color: rgb(0, 122, 170);');
+            authorSpan.textContent = authorName;
+            closingInner.appendChild(authorSpan);
+          }
+
+          closingSection.appendChild(closingInner);
+          section.appendChild(closingSection);
+        }
+
+        // 替换原 blockquote
+        bq.parentNode.replaceChild(section, bq);
       });
     },
 
@@ -1545,6 +1744,8 @@ const markdown = \`![图片](img://\${imageId})\`;
 
           const allElements = section.querySelectorAll('*');
           allElements.forEach(el => {
+            // 跳过装饰性 blockquote section 内的元素
+            if (el.closest('.bq-decorated')) return;
             const currentStyle = el.getAttribute('style') || '';
             let newStyle = currentStyle;
             newStyle = newStyle.replace(/max-width:\s*[^;]+;?/g, '');
@@ -1613,6 +1814,8 @@ const markdown = \`![图片](img://\${imageId})\`;
         // 深色模式适配：调整引用块样式，使用透明黑色让微信自动转换
         const blockquotes = doc.querySelectorAll('blockquote');
         blockquotes.forEach(blockquote => {
+          // 如果已经在装饰 section 内，跳过深色模式处理
+          if (blockquote.closest('.bq-decorated')) return;
           const currentStyle = blockquote.getAttribute('style') || '';
 
           // 移除现有的背景色和文字颜色
@@ -1761,6 +1964,18 @@ const markdown = \`![图片](img://\${imageId})\`;
         'h2', 'h3', 'p', 'strong', 'em', 'del', 'a',
         'ul', 'ol', 'li', 'blockquote', 'br', 'b', 'i', 's'
       ]);
+
+      // 0. 装饰性 blockquote section → 普通 blockquote（提取内容，丢弃装饰元素）
+      doc.querySelectorAll('.bq-decorated').forEach(decorated => {
+        const contentSection = decorated.querySelector('section[style*="padding: 0 1em"]');
+        if (contentSection) {
+          const bq = doc.createElement('blockquote');
+          bq.innerHTML = contentSection.innerHTML;
+          decorated.parentNode.replaceChild(bq, decorated);
+        } else {
+          decorated.remove();
+        }
+      });
 
       // 1. h1 → h2（X Articles 的 H1 保留给文章标题）
       doc.querySelectorAll('h1').forEach(h1 => {

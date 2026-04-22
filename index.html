@@ -78,7 +78,7 @@
     #app {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto auto auto auto 1fr;
       height: 100vh;
       max-width: 1600px;
       margin: 0 auto;
@@ -274,6 +274,145 @@
       content: '⭐';
       font-size: 10px;
       margin-left: 2px;
+    }
+
+    /* 引用块样式切换条 */
+    .bq-style-bar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px var(--space-lg);
+      border-bottom: 1px solid var(--color-light-border);
+      background: var(--color-surface);
+    }
+
+    .bq-style-label {
+      font-size: 11px;
+      color: var(--color-tertiary);
+      white-space: nowrap;
+    }
+
+    .bq-style-options {
+      display: flex;
+      gap: 2px;
+      background: var(--color-bg);
+      border-radius: 6px;
+      padding: 2px;
+    }
+
+    .bq-style-btn {
+      padding: 3px 10px;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      font-size: 11px;
+      color: var(--color-secondary);
+      cursor: pointer;
+      transition: all 120ms;
+      line-height: 1.4;
+    }
+
+    .bq-style-btn:hover {
+      color: var(--color-primary);
+    }
+
+    .bq-style-btn.active {
+      background: var(--color-surface);
+      color: var(--color-accent);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+
+    /* 文末模块配置栏 */
+    .end-module-bar {
+      grid-column: 1 / -1;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-light-border);
+    }
+
+    .end-module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px var(--space-lg);
+    }
+
+    .end-module-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--color-secondary);
+      cursor: pointer;
+    }
+
+    .end-module-toggle input[type="checkbox"] {
+      accent-color: var(--color-accent);
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    .end-module-expand-btn {
+      border: none;
+      background: transparent;
+      font-size: 11px;
+      color: var(--color-accent);
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .end-module-expand-btn:hover {
+      background: var(--color-bg);
+    }
+
+    .end-module-editor {
+      padding: 0 var(--space-lg) var(--space-sm);
+    }
+
+    .end-module-textarea {
+      width: 100%;
+      height: 80px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: var(--space-sm);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      color: var(--color-primary);
+      background: var(--color-bg);
+    }
+
+    .end-module-textarea:focus {
+      border-color: var(--color-accent);
+    }
+
+    .end-module-style-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .end-module-style-label {
+      font-size: 11px;
+      color: var(--color-tertiary);
+      white-space: nowrap;
+    }
+
+    .end-module-select {
+      flex: 1;
+      font-size: 11px;
+      padding: 3px 6px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-bg);
+      color: var(--color-primary);
+      outline: none;
+      cursor: pointer;
     }
 
     /* 主内容区 */
@@ -1121,7 +1260,7 @@
     @media (max-width: 768px) {
       #app {
         grid-template-columns: 1fr;
-        grid-template-rows: auto auto auto 1fr;
+        grid-template-rows: auto auto auto auto 30vh 1fr;
         height: 100vh;
       }
 
@@ -1169,6 +1308,18 @@
       .style-card {
         font-size: 11px;
         padding: 4px 8px;
+      }
+
+      .bq-style-bar {
+        padding: 4px var(--space-sm);
+      }
+
+      .end-module-header {
+        padding: 4px var(--space-sm);
+      }
+
+      .end-module-editor {
+        padding: 0 var(--space-sm) var(--space-sm);
       }
 
       .editor-panel {
@@ -1620,6 +1771,49 @@
         </div>
       </div>
     </section>
+
+    <!-- 引用块样式切换 -->
+    <div class="bq-style-bar">
+      <span class="bq-style-label">引用样式</span>
+      <div class="bq-style-options">
+        <button
+          class="bq-style-btn"
+          :class="{ active: blockquoteStyle === 'decorated' }"
+          @click="blockquoteStyle = 'decorated'"
+        >装饰</button>
+        <button
+          class="bq-style-btn"
+          :class="{ active: blockquoteStyle === 'default' }"
+          @click="blockquoteStyle = 'default'"
+        >默认</button>
+      </div>
+    </div>
+
+    <!-- 文末模块配置 -->
+    <div class="end-module-bar">
+      <div class="end-module-header">
+        <label class="end-module-toggle">
+          <input type="checkbox" v-model="endModule.enabled">
+          <span>文末模块</span>
+        </label>
+        <button class="end-module-expand-btn" @click="showEndModuleEditor = !showEndModuleEditor">
+          {{ showEndModuleEditor ? '收起' : '编辑' }}
+        </button>
+      </div>
+      <div v-if="showEndModuleEditor" class="end-module-editor">
+        <textarea v-model="endModule.content" class="end-module-textarea"
+                  placeholder="输入文末固定内容，支持 Markdown 格式..."></textarea>
+        <div class="end-module-style-row">
+          <span class="end-module-style-label">模块样式</span>
+          <select v-model="endModule.styleKey" class="end-module-select">
+            <option :value="null">跟随正文</option>
+            <option v-for="(style, key) in STYLES" :key="key" :value="key">
+              {{ style.name }}
+            </option>
+          </select>
+        </div>
+      </div>
+    </div>
 
     <!-- 主内容区 -->
     <div class="main-content">
